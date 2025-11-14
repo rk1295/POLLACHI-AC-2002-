@@ -9,25 +9,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Mobile-friendly padding + FIX FOR LAST COLUMN VISIBILITY
+# Mobile-friendly padding and font adjustments
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-left: 0.5rem; padding-right: 0.5rem; }
         input[type="text"] { font-size: 1.1rem; }
         button[kind="secondary"] { width: 100%; }
-
-        /* FIX: Make DataFrame scrollable */
-        .stDataFrame {
-            overflow-x: auto !important;
-        }
-
-        /* FIX: Ensure long Tamil text (LAST COLUMN) wraps instead of cutting */
-        .dataframe td, .dataframe th {
-            white-space: normal !important;
-            word-break: break-word !important;
-            max-width: 300px !important;
-            line-height: 1.3rem !important;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -40,13 +27,16 @@ st.subheader("🔍 வாக்காளர் விவரம் - 2002 (Voter 
 # -----------------------------------
 # LOAD DATA
 # -----------------------------------
-@st.cache_data
+@st.cache_data(show_spinner=True)
 def load_data():
-    df = pd.read_excel("old_data.xlsx")
+    try:
+        df = pd.read_excel("old_data.xlsx")
+    except Exception as e:
+        st.error(f"Excel கோப்பை ஏற்ற முடியவில்லை (Failed to load Excel file): {e}")
+        return pd.DataFrame()
 
-    # Convert to uppercase for consistent exact-match search
-    df["FM_NAME_V2"] = df["FM_NAME_V2"].astype(str).upper().str.strip()
-    df["RLN_FM_NM_V2"] = df["RLN_FM_NM_V2"].astype(str).upper().str.strip()
+    df["FM_NAME_V2"] = df["FM_NAME_V2"].astype(str).str.strip()
+    df["RLN_FM_NM_V2"] = df["RLN_FM_NM_V2"].astype(str).str.strip()
 
     return df
 
@@ -70,28 +60,33 @@ relation_name = st.text_input(
 )
 
 # -----------------------------------
-# SEARCH OPERATION (Exact Match)
+# SEARCH OPERATION
 # -----------------------------------
 if st.button("🔍 தேடு (Search)"):
 
-    if not voter_name or not relation_name:
-        st.warning("⚠️ வாக்காளர் பெயர் மற்றும் தந்தை/கணவர் பெயரை இரண்டையும் உள்ளிடவும்.")
+    name_part = voter_name.strip()
+    rname_part = relation_name.strip()
+
+    if not name_part and not rname_part:
+        st.warning("⚠️ வாக்காளர் பெயர் அல்லது தந்தை/கணவர் பெயரை உள்ளிடவும் (Please enter either Voter's Name or Father's/Husband's Name).")
         st.stop()
 
-    name = voter_name.upper().strip()
-    rname = relation_name.upper().strip()
+    results = df.copy()
 
-    # Exact match search (This version displays last column properly)
-    result = df[
-        (df["FM_NAME_V2"] == name) &
-        (df["RLN_FM_NM_V2"] == rname)
-    ]
+    def safe_contains(series, value):
+        return series.str.contains(value, case=False, na=False, regex=False)
+
+    if name_part:
+        results = results[safe_contains(results["FM_NAME_V2"], name_part)]
+
+    if rname_part:
+        results = results[safe_contains(results["RLN_FM_NM_V2"], rname_part)]
 
     # -----------------------------------
     # RESULTS
     # -----------------------------------
-    if not result.empty:
-        st.success(f"✔ {len(result)} பதிவுகள் கிடைத்தன (record(s) found).")
-        st.dataframe(result, use_container_width=True)
+    if not results.empty:
+        st.success(f"✔ {len(results)} பதிவுகள் கிடைத்தன (record(s) found).")
+        st.dataframe(results, use_container_width=True)
     else:
         st.error("❌ பொருந்தும் பதிவுகள் இல்லை (No matching records found).")
